@@ -1,6 +1,5 @@
 package com.example.myapplication
 
-import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -22,7 +21,6 @@ class FileAdapter(private val files: List<File>) :
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): FileViewHolder {
-        Log.d("FileAdapter", "onCreateViewHolder called")
         val view = LayoutInflater.from(parent.context)
             .inflate(R.layout.item_file, parent, false)
         return FileViewHolder(view)
@@ -30,13 +28,10 @@ class FileAdapter(private val files: List<File>) :
 
     override fun onBindViewHolder(holder: FileViewHolder, position: Int) {
         val file = files[position]
-        Log.d("FileAdapter", "onBindViewHolder called for position $position, file: ${file.name}")
         holder.fileName.text = file.name
         
-        // Determine if this is a system file or user file
         val isSystemFile = file.name == "profileInstalled" || file.name.startsWith(".") || file.name.startsWith("profile")
         
-        // Set file size and type
         if (file.isDirectory) {
             holder.fileSize.text = "Folder"
             holder.fileIcon.setImageResource(R.drawable.ic_folder)
@@ -46,16 +41,12 @@ class FileAdapter(private val files: List<File>) :
             holder.fileIcon.setImageResource(R.drawable.ic_file)
         }
         
-        // Set file date with explanation for system files
         val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault())
         val explanation = if (isSystemFile) " • Created by Android" else " • Created by app"
         holder.fileDate.text = dateFormat.format(Date(file.lastModified())) + explanation
     }
 
-    override fun getItemCount(): Int {
-        Log.d("FileAdapter", "getItemCount returning: ${files.size}")
-        return files.size
-    }
+    override fun getItemCount(): Int = files.size
 
     private fun formatFileSize(size: Long): String {
         if (size <= 0) return "0 B"
