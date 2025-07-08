@@ -75,6 +75,9 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             R.id.nav_gallery -> {
                 replaceFragment(GalleryFragment())
             }
+            R.id.nav_voice -> {
+                replaceFragment(VoiceFragment())
+            }
         }
         drawerLayout.closeDrawer(GravityCompat.START)
         return true
