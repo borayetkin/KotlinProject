@@ -94,16 +94,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:max="100"
-                android:progress="0"
-                android:layout_marginBottom="8dp" />
-
-            <TextView
-                android:id="@+id/tvRecordingInfo"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="No active recording"
-                android:textSize="12sp"
-                android:textColor="@android:color/darker_gray" />
+                android:progress="0" />
 
         </LinearLayout>
 
