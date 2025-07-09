@@ -27,17 +27,17 @@ This application provides voice recording by continuously monitoring audio input
 
 ### File Output:
 
-- **Audio Format** - WAV files (16kHz, 16-bit, Mono channel)
-- **Text Format** - Plain text transcriptions with metadata headers
+- **Audio Format** - WAV files for universal compatibility
+- **Text Format** - Plain text transcriptions with recording details
 - **Naming Convention** - Timestamp-based: `voice_YYYYMMDD_HHMMSS.wav/txt`
-- **Metadata Inclusion** - Duration, sample rate, timestamp, and transcription confidence
+- **Automatic Metadata** - Recording details included in text files
 
-### Technical Implementation:
+### Key Features:
 
-- **Voice Activity Detection** - Threshold-based speech/silence classification
-- **Audio Processing** - Real-time buffer analysis and level monitoring
-- **Duration Filtering** - Minimum 500ms recording length requirement
-- **Status Monitoring** - Real-time feedback system for operation states
+- **Voice Activity Detection** - Automatically detects when you start and stop speaking
+- **Real-time Processing** - Immediate response to voice input
+- **Smart Filtering** - Ignores very short sounds
+- **Status Updates** - Clear feedback on current operation
 
 ## File Management System
 
@@ -67,30 +67,16 @@ Root Directory/
 └── sample2.txt
 ```
 
-## Technical Specifications
+## System Requirements
 
-### Audio Configuration:
+- **Microphone Access** - Required for voice recording
+- **Storage Access** - Required for saving files
 
-- **Sample Rate**: 16,000 Hz
-- **Bit Depth**: 16-bit PCM encoding
-- **Channel Configuration**: Mono (single channel)
-- **VAD Threshold**: 0.02 (configurable sensitivity)
-- **Silence Detection**: 5000ms timeout
-- **Minimum Recording Duration**: 500ms
-
-### System Requirements:
-
-- **Microphone Access** - RECORD_AUDIO permission for audio capture
-- **Internal Storage** - File system write access for data persistence
-
-### Output Format Specifications:
+### File Formats:
 
 #### Audio Files (.wav):
 
-- Standard WAV container format
-- Uncompressed PCM audio data
-- Cross-platform compatibility
-- Raw sample data preservation
+- Standard WAV format for broad compatibility
 
 #### Transcription Files (.txt):
 
@@ -149,10 +135,10 @@ SUCCESS - Speech segment uploaded
 
 ### System Behavior:
 
-- **Extended Speech** - Segmented into separate files based on pause detection
-- **Brief Utterances** - Captured as individual files (minimum 500ms duration)
-- **Natural Pauses** - Handled automatically through silence detection algorithms
-- **Noise Filtering** - Background audio rejected below VAD threshold
+- **Extended Speech** - Automatically split into separate files when you pause
+- **Brief Utterances** - Short recordings are saved as individual files
+- **Natural Pauses** - Handles normal speaking pauses automatically
+- **Noise Filtering** - Ignores background noise and focuses on speech
 
 ## Operational Workflow
 
@@ -233,20 +219,9 @@ KotlinProject/
 3. Begin speech input for automatic recording
 4. Access File List fragment to review generated recordings
 
-## Configuration Parameters
+## Configuration
 
-### Adjustable Constants (VoiceFragment.kt):
-
-```kotlin
-// Voice Activity Detection sensitivity threshold
-private const val VAD_THRESHOLD = 0.02
-
-// Silence detection timeout for recording termination
-private const val SILENCE_TIMEOUT_MS = 5000L
-
-// Minimum viable recording duration
-private const val MIN_RECORDING_DURATION_MS = 500L
-```
+Voice detection sensitivity and timing parameters can be adjusted in the source code if needed.
 
 ## Device Compatibility
 
