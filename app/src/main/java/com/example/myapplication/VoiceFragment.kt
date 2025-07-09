@@ -35,6 +35,7 @@ class VoiceFragment : Fragment() {
         private const val VAD_THRESHOLD = 0.02
         private const val SILENCE_TIMEOUT_MS = 5000L
         private const val MIN_RECORDING_DURATION_MS = 500L
+        private const val STT_TIMEOUT_MS = 5000L // Match VAD timeout for sync
     }
 
     // UI Components
@@ -50,9 +51,13 @@ class VoiceFragment : Fragment() {
     private var recordingStartTime = 0L
     private var currentAudioLevel = 0.0
     private lateinit var audioDir: File
+    
+    // Speech Recognition
+    private lateinit var speechRecognizer: SpeechRecognizerManager
+    private var currentTranscription: String = ""
 
     enum class RecordingState {
-        IDLE, LISTENING, RECORDING, PROCESSING, SENDING
+        IDLE, LISTENING, RECORDING, STT_PROCESSING, PROCESSING, SENDING
     }
     
     private var currentState = RecordingState.IDLE
@@ -76,6 +81,7 @@ class VoiceFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         initializeViews(view)
         setupAudioDirectory()
+        setupSpeechRecognizer()
         setupClickListeners()
         renderState()
     }
@@ -92,6 +98,23 @@ class VoiceFragment : Fragment() {
         if (!audioDir.exists()) {
             audioDir.mkdirs()
             Log.i(TAG, "Created voice recordings directory")
+        }
+    }
+    
+    private fun setupSpeechRecognizer() {
+        speechRecognizer = SpeechRecognizerManager(requireContext())
+        
+        speechRecognizer.setOnTranscriptionResultListener { transcription ->
+            currentTranscription = transcription
+            Log.i(TAG, "STT Result received: \"$transcription\"")
+        }
+        
+        speechRecognizer.setOnErrorListener { error ->
+            Log.w(TAG, "STT Error: $error")
+            // Ensure we always have a transcription result (even if empty) to continue flow
+            if (currentTranscription.isEmpty()) {
+                currentTranscription = ""
+            }
         }
     }
 
@@ -234,25 +257,48 @@ class VoiceFragment : Fragment() {
         currentState = RecordingState.RECORDING
         recordingStartTime = System.currentTimeMillis()
         recordedData.clear()
+        currentTranscription = "" // Reset transcription for new recording
         
-        Log.i(TAG, "RECORDING SPEECH SEGMENT")
+        Log.i(TAG, "RECORDING SPEECH SEGMENT - Preparing STT")
         renderState()
     }
 
     private suspend fun stopRecordingAndContinueListening() {
         if (!isRecording) return
         
-        currentState = RecordingState.PROCESSING
         val duration = System.currentTimeMillis() - recordingStartTime
         Log.i(TAG, "SPEECH SEGMENT ENDED - Duration: ${duration}ms")
-        
-        renderState()
         
         val audioData = synchronized(recordedData) { recordedData.toList() }
         Log.i(TAG, "Processing ${audioData.size} audio samples...")
         
         if (audioData.isNotEmpty()) {
-            createAudioAndTranscriptFiles(audioData)
+            // Stop AudioRecord and switch to STT for transcription
+            currentState = RecordingState.STT_PROCESSING
+            renderState()
+            
+            // Temporarily stop AudioRecord to allow STT access to microphone
+            audioRecord?.stop()
+            
+            // Start STT with a timeout
+            withContext(Dispatchers.Main) {
+                speechRecognizer.startListening()
+            }
+            
+            // Wait for STT result with timeout
+            val sttStartTime = System.currentTimeMillis()
+            while (currentTranscription.isEmpty() && 
+                   (System.currentTimeMillis() - sttStartTime) < STT_TIMEOUT_MS &&
+                   currentState == RecordingState.STT_PROCESSING) {
+                delay(100)
+            }
+            
+            // Stop STT and restart AudioRecord
+            speechRecognizer.stopListening()
+            audioRecord?.startRecording() // Resume VAD monitoring
+            
+            Log.i(TAG, "STT Result: \"$currentTranscription\"")
+            createAudioAndTranscriptFiles(audioData, currentTranscription)
         } else {
             currentState = RecordingState.LISTENING
             renderState()
@@ -269,7 +315,7 @@ class VoiceFragment : Fragment() {
         renderState()
     }
 
-    private suspend fun createAudioAndTranscriptFiles(audioData: List<Short>) {
+    private suspend fun createAudioAndTranscriptFiles(audioData: List<Short>, transcription: String) {
         try {
             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
             val audioFile = File(audioDir, "voice_${timestamp}.wav")
@@ -278,12 +324,12 @@ class VoiceFragment : Fragment() {
             Log.i(TAG, "Creating files: ${audioFile.name}, ${textFile.name}")
             
             audioFile.writeWav(audioData, SAMPLE_RATE)
-            val transcription = textFile.writeTranscript(audioData, timestamp, SAMPLE_RATE)
+            val finalTranscription = textFile.writeTranscript(audioData, timestamp, SAMPLE_RATE, transcription)
             
             currentState = RecordingState.SENDING
             renderState()
             
-            sendFilesToAPI(audioFile, textFile, transcription)
+            sendFilesToAPI(audioFile, textFile, finalTranscription)
             
         } catch (e: Exception) {
             Log.e(TAG, "Error creating files: ${e.message}")
@@ -327,6 +373,9 @@ class VoiceFragment : Fragment() {
     private fun stopListening() {
         Log.i(TAG, "Stopping VAD")
         
+        // Stop speech recognition
+        speechRecognizer.stopListening()
+        
         currentState = RecordingState.IDLE
         vadJob?.cancel()
         audioRecord?.apply { stop(); release() }
@@ -358,6 +407,11 @@ class VoiceFragment : Fragment() {
                 tvStatus.text = "Recording speech: ${String.format("%.1f", duration)}s (auto-stop on silence)"
                 btnMicrophone.isEnabled = true
             }
+            RecordingState.STT_PROCESSING -> {
+                btnMicrophone.icon = ContextCompat.getDrawable(requireContext(), R.drawable.ic_hourglass)
+                tvStatus.text = "Converting speech to text..."
+                btnMicrophone.isEnabled = false
+            }
             RecordingState.PROCESSING -> {
                 btnMicrophone.icon = ContextCompat.getDrawable(requireContext(), R.drawable.ic_hourglass)
                 tvStatus.text = "Processing speech - creating files & sending to API..."
@@ -374,6 +428,7 @@ class VoiceFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         stopListening()
+        speechRecognizer.destroy()
     }
 
     // Removed onPause() - lifecycleScope automatically handles cleanup
