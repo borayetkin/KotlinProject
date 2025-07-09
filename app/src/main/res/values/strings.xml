@@ -16,8 +16,8 @@
     <string name="menu_voice">Voice Recorder</string>
     
     <!-- Voice Fragment -->
-    <string name="voice_title">Voice Recorder with VAD</string>
-    <string name="voice_subtitle">Tap the microphone button to start recording. Voice activity detection will automatically capture speech.</string>
+    <string name="voice_title">Voice Recorder</string>
+    <string name="voice_subtitle">Tap to speech</string>
     <string name="mic_button_start">Start Listening</string>
     <string name="status_idle">Ready to listen</string>
     <string name="status_listening">Listening for speech...</string>

@@ -209,7 +209,7 @@ class VoiceFragment : Fragment() {
                         }
                         
                         // Add audio data to recording
-                        if (isRecording) {
+                                                if (isRecording) {
                             synchronized(recordedData) {
                                 recordedData.addAll(buffer.take(readResult))
                             }
@@ -227,7 +227,9 @@ class VoiceFragment : Fragment() {
                             if (consecutiveSilenceCount >= silenceThreshold) {
                                 val recordingDuration = System.currentTimeMillis() - recordingStartTime
                                 if (recordingDuration >= MIN_RECORDING_DURATION_MS) {
-                                    stopRecording()
+                                    CoroutineScope(Dispatchers.Main).launch {
+                                        stopRecording()
+                                    }
                                 }
                             }
                         }
@@ -396,30 +398,39 @@ class VoiceFragment : Fragment() {
         tvStatus.text = status
     }
 
+    private fun updateRecordingInfo(info: String) {
+        tvRecordingInfo.text = info
+    }
+
     private fun updateUI() {
         when (currentState) {
             RecordingState.IDLE -> {
+                btnMicrophone.icon = ContextCompat.getDrawable(requireContext(), R.drawable.ic_mic)
                 updateStatus(getString(R.string.status_idle))
                 btnMicrophone.isEnabled = true
                 tvRecordingInfo.text = "No active recording"
             }
             RecordingState.LISTENING -> {
+                btnMicrophone.icon = ContextCompat.getDrawable(requireContext(), R.drawable.ic_mic_active)
                 updateStatus(getString(R.string.status_listening))
                 btnMicrophone.isEnabled = true
                 tvRecordingInfo.text = "Listening for speech..."
             }
             RecordingState.RECORDING -> {
+                btnMicrophone.icon = ContextCompat.getDrawable(requireContext(), R.drawable.ic_mic_active)
                 updateStatus(getString(R.string.status_recording))
                 btnMicrophone.isEnabled = true
                 val duration = (System.currentTimeMillis() - recordingStartTime) / 1000.0
                 tvRecordingInfo.text = "Recording: ${String.format("%.1f", duration)}s"
             }
             RecordingState.PROCESSING -> {
+                btnMicrophone.icon = ContextCompat.getDrawable(requireContext(), R.drawable.ic_hourglass)
                 updateStatus(getString(R.string.status_processing))
                 btnMicrophone.isEnabled = false
                 tvRecordingInfo.text = "Processing audio..."
             }
             RecordingState.SENDING -> {
+                btnMicrophone.icon = ContextCompat.getDrawable(requireContext(), R.drawable.ic_send)
                 updateStatus(getString(R.string.status_sending))
                 btnMicrophone.isEnabled = false
                 tvRecordingInfo.text = "Sending to API..."
