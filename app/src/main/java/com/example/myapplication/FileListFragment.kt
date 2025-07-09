@@ -15,6 +15,7 @@ class FileListFragment : Fragment() {
     private lateinit var recyclerView: RecyclerView
     private lateinit var adapter: FileAdapter
     private var currentDirectory: File? = null
+    private lateinit var audioPlayer: AudioPlayerManager
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -24,6 +25,13 @@ class FileListFragment : Fragment() {
         val root = inflater.inflate(R.layout.fragment_file_list, container, false)
         recyclerView = root.findViewById(R.id.recyclerView)
         recyclerView.layoutManager = LinearLayoutManager(context)
+        
+        // Initialize audio player
+        audioPlayer = AudioPlayerManager.getInstance()
+        audioPlayer.setOnPlaybackStateChangedListener { _, _ ->
+            // Refresh adapter to update play/pause icons
+            adapter.notifyDataSetChanged()
+        }
         
         // Start from main directory
         currentDirectory = null
@@ -75,13 +83,19 @@ class FileListFragment : Fragment() {
                 files.add(0, backButton)
             }
 
-            adapter = FileAdapter(files) { file -> 
+            adapter = FileAdapter(files, { file -> 
                 onFileClick(file)
-            }
+            }, audioPlayer.currentFile)
             recyclerView.adapter = adapter
         } catch (e: Exception) {
             Toast.makeText(context, "Error loading files: ${e.message}", Toast.LENGTH_LONG).show()
         }
+    }
+    
+    override fun onDestroyView() {
+        super.onDestroyView()
+        // Stop any playing audio when leaving this fragment
+        audioPlayer.stopAudio()
     }
     
     private fun onFileClick(file: File) {
@@ -95,6 +109,10 @@ class FileListFragment : Fragment() {
                 // Navigate into directory
                 currentDirectory = file
                 loadFiles()
+            }
+            file.name.endsWith(".wav") && file.name.startsWith("voice_") -> {
+                // Play/pause audio file
+                audioPlayer.playAudio(requireContext(), file)
             }
             file.name.endsWith(".txt") && file.name.startsWith("voice_") -> {
                 // Show transcript content

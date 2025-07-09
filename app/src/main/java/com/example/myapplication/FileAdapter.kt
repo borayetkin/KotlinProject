@@ -12,7 +12,8 @@ import java.util.*
 
 class FileAdapter(
     private val files: List<File>,
-    private val onFileClick: (File) -> Unit = {}
+    private val onFileClick: (File) -> Unit = {},
+    private val currentPlayingFile: File? = null
 ) : RecyclerView.Adapter<FileAdapter.FileViewHolder>() {
 
     class FileViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
@@ -64,7 +65,12 @@ class FileAdapter(
             }
             isVoiceFile && file.name.endsWith(".wav") -> {
                 holder.fileSize.text = "${formatFileSize(file.length())} • Audio Recording"
-                holder.fileIcon.setImageResource(R.drawable.ic_mic)
+                // Show pause icon if this file is currently playing, otherwise show play icon
+                if (currentPlayingFile == file) {
+                    holder.fileIcon.setImageResource(R.drawable.ic_pause)
+                } else {
+                    holder.fileIcon.setImageResource(R.drawable.ic_play)
+                }
             }
             isVoiceFile && file.name.endsWith(".txt") -> {
                 holder.fileSize.text = "${formatFileSize(file.length())} • Transcription"
@@ -84,6 +90,7 @@ class FileAdapter(
             val dateFormat = SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault())
             val explanation = when {
                 file.name == "voice_recordings" -> " • Tap to browse recordings"
+                isVoiceFile && file.name.endsWith(".wav") -> if (currentPlayingFile == file) " • Playing..." else " • Tap to play"
                 isVoiceFile -> " • Voice Recorder"
                 isSystemFile -> " • Android System"
                 else -> " • User Created"

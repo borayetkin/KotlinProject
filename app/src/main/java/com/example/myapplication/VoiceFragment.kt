@@ -123,6 +123,9 @@ class VoiceFragment : Fragment() {
             return
         }
 
+        // Stop any audio playback before starting recording
+        AudioPlayerManager.getInstance().stopAudio()
+
         Log.i(TAG, "CONTINUOUS VAD MODE ACTIVATED")
         currentState = RecordingState.LISTENING
         // Optional: Clear previous recordings (remove if you want to keep old recordings)
