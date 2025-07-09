@@ -114,6 +114,15 @@ class VoiceFragment : Fragment() {
     private fun startListening() {
         if (isListening) return
 
+        // Verify permission before creating AudioRecord
+        if (ContextCompat.checkSelfPermission(requireContext(), Manifest.permission.RECORD_AUDIO) 
+            != PackageManager.PERMISSION_GRANTED) {
+            Log.e(TAG, "Audio permission not granted")
+            currentState = RecordingState.IDLE
+            renderState()
+            return
+        }
+
         Log.i(TAG, "CONTINUOUS VAD MODE ACTIVATED")
         currentState = RecordingState.LISTENING
         // Optional: Clear previous recordings (remove if you want to keep old recordings)
