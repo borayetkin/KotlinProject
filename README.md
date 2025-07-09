@@ -4,7 +4,7 @@ An Android application implementing continuous Voice Activity Detection (VAD) fo
 
 ## Overview
 
-This application provides hands-free voice recording by continuously monitoring audio input and automatically capturing speech segments. Each detected speech is saved as separate audio and text files.
+This application provides voice recording by continuously monitoring audio input and automatically capturing speech segments. Each detected speech is saved as separate audio and text files.
 
 ## Key Features
 
