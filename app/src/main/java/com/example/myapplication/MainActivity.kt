@@ -47,8 +47,8 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
                     drawerLayout.closeDrawer(GravityCompat.START)
                 } else {
                     finish()
-                }
             }
+        }
         })
     }
 
@@ -71,7 +71,7 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
             }
             R.id.nav_files -> {
                 replaceFragment(FileListFragment())
-            }
+}
             R.id.nav_gallery -> {
                 replaceFragment(GalleryFragment())
             }
