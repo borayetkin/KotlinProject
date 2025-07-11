@@ -298,7 +298,7 @@ class VoiceFragment : Fragment() {
             audioRecord?.startRecording() // Resume VAD monitoring
             
             Log.i(TAG, "STT Result: \"$currentTranscription\"")
-            createAudioAndTranscriptFiles(audioData, currentTranscription)
+            createAudioAndTranscriptFiles(audioData, currentTranscription, continueListening = true)
         } else {
             currentState = RecordingState.LISTENING
             renderState()
@@ -315,7 +315,7 @@ class VoiceFragment : Fragment() {
         renderState()
     }
 
-    private suspend fun createAudioAndTranscriptFiles(audioData: List<Short>, transcription: String) {
+    private suspend fun createAudioAndTranscriptFiles(audioData: List<Short>, transcription: String, continueListening: Boolean = true) {
         try {
             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
             val audioFile = File(audioDir, "voice_${timestamp}.wav")
@@ -329,29 +329,42 @@ class VoiceFragment : Fragment() {
             currentState = RecordingState.SENDING
             renderState()
             
-            sendFilesToAPI(audioFile, textFile, finalTranscription)
+            sendFilesToAPI(audioFile, textFile, finalTranscription, continueListening)
             
         } catch (e: Exception) {
             Log.e(TAG, "Error creating files: ${e.message}")
-            currentState = RecordingState.LISTENING
+            if (continueListening) {
+                currentState = RecordingState.LISTENING
+            } else {
+                currentState = RecordingState.IDLE
+            }
             renderState()
         }
     }
 
-    private suspend fun sendFilesToAPI(audioFile: File, textFile: File, transcription: String) {
+    private suspend fun sendFilesToAPI(audioFile: File, textFile: File, transcription: String, continueListening: Boolean = true) {
         try {
             Log.i(TAG, "SENDING TO API: ${audioFile.name}, ${textFile.name}")
             Log.i(TAG, "Content: \"$transcription\"")
             
             delay(1500) // Simulate API call
             
-            Log.i(TAG, "SUCCESS - Speech uploaded! Continuing to listen...")
+            if (continueListening) {
+                Log.i(TAG, "SUCCESS - Speech uploaded! Continuing to listen...")
+            } else {
+                Log.i(TAG, "SUCCESS - Speech uploaded! Manual stop complete.")
+            }
             
         } catch (e: Exception) {
             Log.e(TAG, "API Error: ${e.message}")
         } finally {
-            currentState = RecordingState.LISTENING
-            renderState()
+            if (continueListening) {
+                currentState = RecordingState.LISTENING
+                renderState()
+            } else {
+                // Manual stop complete - perform final cleanup
+                completeStopListening()
+            }
         }
     }
     
@@ -371,14 +384,76 @@ class VoiceFragment : Fragment() {
     }
 
     private fun stopListening() {
-        Log.i(TAG, "Stopping VAD")
+        Log.i(TAG, "Manual stop requested")
+        
+        // Check if we have recording data that needs to be saved
+        if (isRecording && recordedData.isNotEmpty()) {
+            Log.i(TAG, "Manual stop - Recording in progress, saving before stopping...")
+            
+            // Process the current recording first
+            lifecycleScope.launch {
+                val duration = System.currentTimeMillis() - recordingStartTime
+                Log.i(TAG, "MANUAL STOP - Recording duration: ${duration}ms")
+                
+                val audioData = synchronized(recordedData) { recordedData.toList() }
+                Log.i(TAG, "Manual stop - Processing ${audioData.size} audio samples...")
+                
+                if (audioData.isNotEmpty() && duration >= MIN_RECORDING_DURATION_MS) {
+                    // Save the recording before stopping
+                    currentState = RecordingState.STT_PROCESSING
+                    renderState()
+                    
+                    // Temporarily stop AudioRecord to allow STT access to microphone
+                    audioRecord?.stop()
+                    
+                    // Start STT with a timeout
+                    withContext(Dispatchers.Main) {
+                        speechRecognizer.startListening()
+                    }
+                    
+                    // Wait for STT result with timeout
+                    val sttStartTime = System.currentTimeMillis()
+                    while (currentTranscription.isEmpty() && 
+                           (System.currentTimeMillis() - sttStartTime) < STT_TIMEOUT_MS &&
+                           currentState == RecordingState.STT_PROCESSING) {
+                        delay(100)
+                    }
+                    
+                    // Stop STT - no need to restart AudioRecord since we're stopping
+                    speechRecognizer.stopListening()
+                    
+                    Log.i(TAG, "Manual stop - STT Result: \"$currentTranscription\"")
+                    createAudioAndTranscriptFiles(audioData, currentTranscription, continueListening = false)
+                    
+                    // Note: completeStopListening() will be called automatically after API send completes
+                } else {
+                    Log.w(TAG, "Manual stop - Recording too short or empty, discarding...")
+                    completeStopListening()
+                }
+            }
+        } else {
+            // No recording in progress, stop immediately
+            Log.i(TAG, "Manual stop - No recording in progress, stopping immediately")
+            completeStopListening()
+        }
+    }
+    
+    private fun completeStopListening() {
+        Log.i(TAG, "Completing stop process")
         
         // Stop speech recognition
         speechRecognizer.stopListening()
         
         currentState = RecordingState.IDLE
         vadJob?.cancel()
-        audioRecord?.apply { stop(); release() }
+        audioRecord?.apply { 
+            try {
+                stop()
+                release()
+            } catch (e: Exception) {
+                Log.w(TAG, "Error stopping AudioRecord: ${e.message}")
+            }
+        }
         audioRecord = null
         recordedData.clear()
         
