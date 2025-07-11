@@ -54,6 +54,23 @@ This application provides voice recording by continuously monitoring audio input
 - **Transcription Files (.txt)** - Speech-to-text output with metadata
 - **System Files** - Application configuration and sample data
 
+### File Interaction:
+
+#### Audio File Playback:
+
+- **Action**: Tap on `.wav` file
+- **Behavior**: Play/pause audio using built-in media player
+- **Visual Feedback**: Play/pause icon updates in real-time
+
+#### Transcription File Viewing:
+
+- **Action**: Tap on `.txt` transcription file
+- **Behavior**: Display clean dialog showing only:
+  - **Duration**: Recording length (e.g., "3.46s")
+  - **Transcription**: Complete speech-to-text content
+- **Interface**: Modal dialog with "Close" button
+- **Format**: Simplified view without technical metadata
+
 ### Storage Organization:
 
 ```
