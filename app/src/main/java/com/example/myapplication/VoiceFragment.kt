@@ -24,6 +24,7 @@ import java.util.*
 import kotlin.math.sqrt
 import com.example.myapplication.WavUtils.writeWav
 import com.example.myapplication.WavUtils.writeTranscript
+import com.example.myapplication.WavUtils.writeTranscriptWithTranslation
 
 class VoiceFragment : Fragment() {
     
@@ -52,9 +53,11 @@ class VoiceFragment : Fragment() {
     private var currentAudioLevel = 0.0
     private lateinit var audioDir: File
     
-    // Speech Recognition
-    private lateinit var speechRecognizer: SpeechRecognizerManager
+    // Offline Speech Recognition and Translation
+    private lateinit var voskSTT: VoskSTTManager
+    private lateinit var translator: OfflineTranslationManager
     private var currentTranscription: String = ""
+    private var currentTranslation: String = ""
 
     enum class RecordingState {
         IDLE, LISTENING, RECORDING, STT_PROCESSING, PROCESSING, SENDING
@@ -81,7 +84,7 @@ class VoiceFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         initializeViews(view)
         setupAudioDirectory()
-        setupSpeechRecognizer()
+        setupOfflineSTTAndTranslation()
         setupClickListeners()
         renderState()
     }
@@ -101,19 +104,63 @@ class VoiceFragment : Fragment() {
         }
     }
     
-    private fun setupSpeechRecognizer() {
-        speechRecognizer = SpeechRecognizerManager(requireContext())
-        
-        speechRecognizer.setOnTranscriptionResultListener { transcription ->
-            currentTranscription = transcription
-            Log.i(TAG, "STT Result received: \"$transcription\"")
+    private fun setupOfflineSTTAndTranslation() {
+        // Initialize Vosk STT Manager with error handling
+        try {
+            voskSTT = VoskSTTManager(requireContext())
+            
+            voskSTT.setOnTranscriptionResultListener { transcription ->
+                currentTranscription = transcription
+                Log.i(TAG, "Offline STT Result received: \"$transcription\"")
+            }
+        } catch (e: UnsatisfiedLinkError) {
+            Log.e(TAG, "Failed to initialize Vosk STT due to native library issue: ${e.message}")
+            // Continue without STT - the status will show "Voice recording ready"
+            return
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to initialize Vosk STT: ${e.message}")
+            return
         }
         
-        speechRecognizer.setOnErrorListener { error ->
-            Log.w(TAG, "STT Error: $error")
+        voskSTT.setOnErrorListener { error ->
+            Log.w(TAG, "Offline STT Error: $error")
             // Ensure we always have a transcription result (even if empty) to continue flow
             if (currentTranscription.isEmpty()) {
                 currentTranscription = ""
+            }
+        }
+        
+        voskSTT.setOnInitializedListener {
+            Log.i(TAG, "Vosk STT initialized and ready")
+        }
+        
+        // Initialize Translation Manager
+        translator = OfflineTranslationManager(requireContext())
+        
+        translator.setOnTranslationResultListener { original, translated ->
+            currentTranslation = translated
+            Log.i(TAG, "Translation result: \"$original\" -> \"$translated\"")
+        }
+        
+        translator.setOnErrorListener { error ->
+            Log.w(TAG, "Translation Error: $error")
+        }
+        
+        translator.setOnModelDownloadedListener {
+            Log.i(TAG, "Translation models downloaded and ready")
+        }
+        
+        // Initialize models
+        lifecycleScope.launch {
+            try {
+                // Initialize Vosk model from assets
+                voskSTT.initializeModel()
+                
+                // Download translation models if needed (requires Wi-Fi)
+                translator.downloadModels()
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error initializing offline systems: ${e.message}")
             }
         }
     }
@@ -210,7 +257,14 @@ class VoiceFragment : Fragment() {
                             withContext(Dispatchers.Main) { startRecording() }
                         }
                         if (isRecording) {
-                            synchronized(recordedData) { recordedData.addAll(buffer.take(readResult)) }
+                            synchronized(recordedData) { 
+                                recordedData.addAll(buffer.take(readResult))
+                                
+                                // Process audio with Vosk in real-time for better accuracy
+                                if (voskSTT.isReady()) {
+                                    voskSTT.processAudio(buffer, readResult)
+                                }
+                            }
                         }
                     } else {
                         consecutiveSilenceCount++
@@ -259,7 +313,7 @@ class VoiceFragment : Fragment() {
         recordedData.clear()
         currentTranscription = "" // Reset transcription for new recording
         
-        Log.i(TAG, "RECORDING SPEECH SEGMENT - Preparing STT")
+        Log.i(TAG, "RECORDING SPEECH SEGMENT - Using offline STT")
         renderState()
     }
 
@@ -273,32 +327,34 @@ class VoiceFragment : Fragment() {
         Log.i(TAG, "Processing ${audioData.size} audio samples...")
         
         if (audioData.isNotEmpty()) {
-            // Stop AudioRecord and switch to STT for transcription
+            // Process with offline Vosk STT (no need to stop AudioRecord)
             currentState = RecordingState.STT_PROCESSING
             renderState()
             
-            // Temporarily stop AudioRecord to allow STT access to microphone
-            audioRecord?.stop()
-            
-            // Start STT with a timeout
-            withContext(Dispatchers.Main) {
-                speechRecognizer.startListening()
+            // Finalize Vosk recognition for this recording segment
+            val transcription = if (voskSTT.isReady()) {
+                voskSTT.finalizeRecognition() ?: ""
+            } else {
+                Log.w(TAG, "Vosk STT not ready, using empty transcription")
+                ""
             }
             
-            // Wait for STT result with timeout
-            val sttStartTime = System.currentTimeMillis()
-            while (currentTranscription.isEmpty() && 
-                   (System.currentTimeMillis() - sttStartTime) < STT_TIMEOUT_MS &&
-                   currentState == RecordingState.STT_PROCESSING) {
-                delay(100)
+            currentTranscription = transcription
+            Log.i(TAG, "Offline STT Result: \"$currentTranscription\"")
+            
+            // Translate the transcription if available
+            currentTranslation = ""
+            if (currentTranscription.isNotEmpty() && translator.isReady()) {
+                try {
+                    val translationResult = translator.autoTranslate(currentTranscription)
+                    currentTranslation = translationResult?.second ?: ""
+                    Log.i(TAG, "Translation: \"$currentTranscription\" -> \"$currentTranslation\"")
+                } catch (e: Exception) {
+                    Log.w(TAG, "Translation failed: ${e.message}")
+                }
             }
             
-            // Stop STT and restart AudioRecord
-            speechRecognizer.stopListening()
-            audioRecord?.startRecording() // Resume VAD monitoring
-            
-            Log.i(TAG, "STT Result: \"$currentTranscription\"")
-            createAudioAndTranscriptFiles(audioData, currentTranscription, continueListening = true)
+            createAudioAndTranscriptFiles(audioData, currentTranscription, currentTranslation, continueListening = true)
         } else {
             currentState = RecordingState.LISTENING
             renderState()
@@ -315,7 +371,7 @@ class VoiceFragment : Fragment() {
         renderState()
     }
 
-    private suspend fun createAudioAndTranscriptFiles(audioData: List<Short>, transcription: String, continueListening: Boolean = true) {
+    private suspend fun createAudioAndTranscriptFiles(audioData: List<Short>, transcription: String, translation: String = "", continueListening: Boolean = true) {
         try {
             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
             val audioFile = File(audioDir, "voice_${timestamp}.wav")
@@ -324,7 +380,7 @@ class VoiceFragment : Fragment() {
             Log.i(TAG, "Creating files: ${audioFile.name}, ${textFile.name}")
             
             audioFile.writeWav(audioData, SAMPLE_RATE)
-            val finalTranscription = textFile.writeTranscript(audioData, timestamp, SAMPLE_RATE, transcription)
+            val finalTranscription = textFile.writeTranscriptWithTranslation(audioData, timestamp, SAMPLE_RATE, transcription, translation)
             
             currentState = RecordingState.SENDING
             renderState()
@@ -399,31 +455,34 @@ class VoiceFragment : Fragment() {
                 Log.i(TAG, "Manual stop - Processing ${audioData.size} audio samples...")
                 
                 if (audioData.isNotEmpty() && duration >= MIN_RECORDING_DURATION_MS) {
-                    // Save the recording before stopping
+                    // Save the recording before stopping using offline STT
                     currentState = RecordingState.STT_PROCESSING
                     renderState()
                     
-                    // Temporarily stop AudioRecord to allow STT access to microphone
-                    audioRecord?.stop()
-                    
-                    // Start STT with a timeout
-                    withContext(Dispatchers.Main) {
-                        speechRecognizer.startListening()
+                    // Finalize Vosk recognition for this recording segment
+                    val transcription = if (voskSTT.isReady()) {
+                        voskSTT.finalizeRecognition() ?: ""
+                    } else {
+                        Log.w(TAG, "Vosk STT not ready, using empty transcription")
+                        ""
                     }
                     
-                    // Wait for STT result with timeout
-                    val sttStartTime = System.currentTimeMillis()
-                    while (currentTranscription.isEmpty() && 
-                           (System.currentTimeMillis() - sttStartTime) < STT_TIMEOUT_MS &&
-                           currentState == RecordingState.STT_PROCESSING) {
-                        delay(100)
+                    currentTranscription = transcription
+                    Log.i(TAG, "Manual stop - Offline STT Result: \"$currentTranscription\"")
+                    
+                    // Translate the transcription if available
+                    currentTranslation = ""
+                    if (currentTranscription.isNotEmpty() && translator.isReady()) {
+                        try {
+                            val translationResult = translator.autoTranslate(currentTranscription)
+                            currentTranslation = translationResult?.second ?: ""
+                            Log.i(TAG, "Manual stop - Translation: \"$currentTranscription\" -> \"$currentTranslation\"")
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Manual stop - Translation failed: ${e.message}")
+                        }
                     }
                     
-                    // Stop STT - no need to restart AudioRecord since we're stopping
-                    speechRecognizer.stopListening()
-                    
-                    Log.i(TAG, "Manual stop - STT Result: \"$currentTranscription\"")
-                    createAudioAndTranscriptFiles(audioData, currentTranscription, continueListening = false)
+                    createAudioAndTranscriptFiles(audioData, currentTranscription, currentTranslation, continueListening = false)
                     
                     // Note: completeStopListening() will be called automatically after API send completes
                 } else {
@@ -441,8 +500,8 @@ class VoiceFragment : Fragment() {
     private fun completeStopListening() {
         Log.i(TAG, "Completing stop process")
         
-        // Stop speech recognition
-        speechRecognizer.stopListening()
+        // Reset offline systems for next session
+        voskSTT.reset()
         
         currentState = RecordingState.IDLE
         vadJob?.cancel()
@@ -471,9 +530,10 @@ class VoiceFragment : Fragment() {
                 tvStatus.text = getString(R.string.status_idle)
                 btnMicrophone.isEnabled = true
             }
-            RecordingState.LISTENING -> {
+                        RecordingState.LISTENING -> {
                 btnMicrophone.icon = ContextCompat.getDrawable(requireContext(), R.drawable.ic_mic_active)
-                tvStatus.text = "Continuous listening - VAD active, waiting for speech"
+                val sttStatus = if (voskSTT.isReady()) "with offline STT" else "without STT (model missing)"
+                tvStatus.text = "Continuous listening - VAD active, $sttStatus"
                 btnMicrophone.isEnabled = true
             }
             RecordingState.RECORDING -> {
@@ -484,7 +544,7 @@ class VoiceFragment : Fragment() {
             }
             RecordingState.STT_PROCESSING -> {
                 btnMicrophone.icon = ContextCompat.getDrawable(requireContext(), R.drawable.ic_hourglass)
-                tvStatus.text = "Converting speech to text..."
+                tvStatus.text = "Converting speech to text (offline)..."
                 btnMicrophone.isEnabled = false
             }
             RecordingState.PROCESSING -> {
@@ -503,7 +563,8 @@ class VoiceFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         stopListening()
-        speechRecognizer.destroy()
+        voskSTT.destroy()
+        translator.destroy()
     }
 
     // Removed onPause() - lifecycleScope automatically handles cleanup

@@ -11,7 +11,9 @@ This application provides voice recording by continuously monitoring audio input
 - **Continuous Voice Activity Detection** - Single activation enables persistent audio monitoring
 - **Automatic Recording Control** - Speech detection triggers recording start/stop automatically
 - **Intelligent Silence Detection** - 5-second silence threshold for automatic recording termination
-- **Automatic File Generation** - Creates WAV audio files and text transcriptions
+- **Offline Speech Recognition** - Vosk-powered STT that works without internet connection
+- **Turkish-English Translation** - ML Kit offline translation between Turkish and English
+- **Automatic File Generation** - Creates WAV audio files and text transcriptions with translations
 - **API Integration** - Mock API upload functionality for recorded content
 - **File Management System** - Organized storage with browsable directory structure
 - **Session Management** - Automatic cleanup of previous recordings on new session start
@@ -34,9 +36,10 @@ This application provides voice recording by continuously monitoring audio input
 
 ### Key Features:
 
-- **Voice Activity Detection** - Automatically detects when you start and stop speaking
-- **Real-time Processing** - Immediate response to voice input
+- **Offline Voice Activity Detection** - Automatically detects when you start and stop speaking without internet
+- **Real-time Processing** - Immediate response to voice input using on-device STT
 - **Smart Filtering** - Ignores very short sounds
+- **Turkish-English Translation** - Automatic language detection and translation
 - **Status Updates** - Clear feedback on current operation
 
 ## File Management System
@@ -280,4 +283,4 @@ Filter Android Studio logcat by `VoiceRecorder` tag for detailed operation track
 
 ---
 
-**Technical Implementation**: Kotlin-based Android application with continuous VAD processing and automatic file management.
+**Technical Implementation**: Kotlin-based Android application with continuous VAD processing, offline Vosk STT, ML Kit translation, and automatic file management.

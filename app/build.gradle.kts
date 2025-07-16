@@ -18,6 +18,11 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+        
+        ndk {
+            // Support ARM64 for M1 Mac emulator
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86", "x86_64")
+        }
     }
 
     buildTypes {
@@ -43,6 +48,10 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+            // Handle JNA native library packaging for ARM64
+            pickFirsts += "**/libjnidispatch.so"
+        }
     }
 }
 
@@ -61,6 +70,15 @@ dependencies {
     
     // Audio & Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+    
+    // Offline Speech Recognition - Vosk Android with JNA exclusion and Android-specific JNA
+    implementation("com.alphacephei:vosk-android:0.3.45") {
+        exclude(group = "net.java.dev.jna", module = "jna")
+    }
+    implementation("net.java.dev.jna:jna:5.13.0@aar")
+    
+    // Offline Translation - ML Kit
+    implementation("com.google.mlkit:translate:17.0.1")
     
     // Testing
     testImplementation(libs.junit)
