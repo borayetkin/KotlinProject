@@ -143,11 +143,12 @@ class VoiceFragment : Fragment() {
         }
         
         translator.setOnErrorListener { error ->
-            Log.w(TAG, "Translation Error: $error")
+            Log.d(TAG, "Translation note: $error")
+            // Don't show error to user - app works fine without translation
         }
         
         translator.setOnModelDownloadedListener {
-            Log.i(TAG, "Translation models downloaded and ready")
+            Log.i(TAG, "Translation models ready")
         }
         
         // Initialize models
@@ -155,9 +156,6 @@ class VoiceFragment : Fragment() {
             try {
                 // Initialize Vosk model from assets
                 voskSTT.initializeModel()
-                
-                // Download translation models if needed (requires Wi-Fi)
-                translator.downloadModels()
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Error initializing offline systems: ${e.message}")

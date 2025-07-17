@@ -1,10 +1,10 @@
 # Smart Voice Recorder with Continuous VAD
 
-An Android application implementing continuous Voice Activity Detection (VAD) for automatic speech recording and transcription.
+A streamlined Android voice recording application with automatic speech detection, offline speech-to-text, and translation capabilities.
 
 ## Overview
 
-This application provides voice recording by continuously monitoring audio input and automatically capturing speech segments. Each detected speech is saved as separate audio and text files.
+This voice recorder application provides continuous Voice Activity Detection (VAD) for automatic speech recording and transcription. The app features a clean two-screen interface: voice recording with real-time audio monitoring and a file manager for playback and transcript viewing.
 
 ## Key Features
 
@@ -14,8 +14,8 @@ This application provides voice recording by continuously monitoring audio input
 - **Offline Speech Recognition** - Vosk-powered STT that works without internet connection
 - **Turkish-English Translation** - ML Kit offline translation between Turkish and English
 - **Automatic File Generation** - Creates WAV audio files and text transcriptions with translations
-- **API Integration** - Mock API upload functionality for recorded content
-- **File Management System** - Organized storage with browsable directory structure
+- **File Management System** - Browse, play, and view transcripts of recorded files
+- **Clean Navigation** - Simple two-screen interface: Voice Recorder and File Manager
 - **Session Management** - Automatic cleanup of previous recordings on new session start
 
 ## Voice Recording Implementation
@@ -202,10 +202,12 @@ KotlinProject/
 │   ├── src/main/
 │   │   ├── java/com/example/myapplication/
 │   │   │   ├── VoiceFragment.kt          // Core recording implementation
-│   │   │   ├── FileListFragment.kt       // File system browser
+│   │   │   ├── FileListFragment.kt       // File browser and playback
 │   │   │   ├── FileAdapter.kt            // File display adapter
-│   │   │   ├── HomeFragment.kt           // Application home screen
-│   │   │   ├── GalleryFragment.kt        // Media gallery component
+│   │   │   ├── AudioPlayerManager.kt     // Audio playback management
+│   │   │   ├── VoskSTTManager.kt         // Speech-to-text processing
+│   │   │   ├── OfflineTranslationManager.kt // Translation functionality
+│   │   │   ├── WavUtils.kt               // Audio file utilities
 │   │   │   └── MainActivity.kt           // Primary activity controller
 │   │   ├── res/
 │   │   │   ├── drawable/                 // Vector icons and graphics

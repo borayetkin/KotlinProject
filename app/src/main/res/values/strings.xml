@@ -1,23 +1,20 @@
 <resources>
-    <string name="app_name">My Application</string>
+    <string name="app_name">Voice Recorder</string>
     
     <!-- Navigation Drawer -->
     <string name="navigation_drawer_open">Open navigation drawer</string>
     <string name="navigation_drawer_close">Close navigation drawer</string>
-    <string name="nav_header_title">File Explorer</string>
-    <string name="nav_header_subtitle">Internal Storage Browser</string>
+    <string name="nav_header_title">Voice Recorder</string>
+    <string name="nav_header_subtitle">Record and manage voice files</string>
     <string name="nav_header_desc">Navigation header</string>
-    <string name="action_settings">Settings</string>
     
     <!-- Menu Items -->
-    <string name="menu_home">Home</string>
-    <string name="menu_files">File List</string>
-    <string name="menu_gallery">Gallery</string>
+    <string name="menu_files">File Manager</string>
     <string name="menu_voice">Voice Recorder</string>
     
     <!-- Voice Fragment -->
     <string name="voice_title">Voice Recorder</string>
-    <string name="voice_subtitle">Tap to speech</string>
+    <string name="voice_subtitle">Tap to start recording</string>
     <string name="mic_button_start">Start Listening</string>
     <string name="status_idle">Ready to listen</string>
     <string name="status_listening">Listening for speech...</string>

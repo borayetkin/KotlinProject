@@ -44,96 +44,147 @@ class OfflineTranslationManager(private val context: Context) {
     }
     
     private fun setupTranslators() {
-        // Turkish to English translator
-        val turkishToEnglishOptions = TranslatorOptions.Builder()
-            .setSourceLanguage(TranslateLanguage.TURKISH)
-            .setTargetLanguage(TranslateLanguage.ENGLISH)
-            .build()
-        turkishToEnglishTranslator = Translation.getClient(turkishToEnglishOptions)
-        
-        // English to Turkish translator
-        val englishToTurkishOptions = TranslatorOptions.Builder()
-            .setSourceLanguage(TranslateLanguage.ENGLISH)
-            .setTargetLanguage(TranslateLanguage.TURKISH)
-            .build()
-        englishToTurkishTranslator = Translation.getClient(englishToTurkishOptions)
-        
-        Log.i(TAG, "Translators created")
+        try {
+            // Create Turkish to English translator
+            val turkishToEnglishOptions = TranslatorOptions.Builder()
+                .setSourceLanguage(TranslateLanguage.TURKISH)
+                .setTargetLanguage(TranslateLanguage.ENGLISH)
+                .build()
+            
+            turkishToEnglishTranslator = Translation.getClient(turkishToEnglishOptions)
+            
+            // Create English to Turkish translator  
+            val englishToTurkishOptions = TranslatorOptions.Builder()
+                .setSourceLanguage(TranslateLanguage.ENGLISH)
+                .setTargetLanguage(TranslateLanguage.TURKISH)
+                .build()
+            
+            englishToTurkishTranslator = Translation.getClient(englishToTurkishOptions)
+            
+            Log.i(TAG, "Translators created")
+            
+            // Download models with improved error handling
+            downloadModels()
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to setup translators: ${e.message}")
+            onError?.invoke("Translation setup failed")
+        }
     }
     
-    /**
-     * Download translation models for offline use
-     */
-    suspend fun downloadModels(): Boolean = suspendCoroutine { continuation ->
-        val conditions = DownloadConditions.Builder()
-            .requireWifi() // Download only on Wi-Fi to save data
-            .build()
-        
+    private fun downloadModels() {
         Log.i(TAG, "Starting model download...")
         
-        var turkishToEnglishDownloaded = false
-        var englishToTurkishDownloaded = false
-        var turkishToEnglishFailed = false
-        var englishToTurkishFailed = false
-        var continuationResumed = false
+        // Log device status for debugging
+        logDeviceStatus()
+        
+        // Option 1: Allow download on any network (recommended for development/testing)
+        val conditions = DownloadConditions.Builder()
+            .build() // No restrictions - downloads on WiFi or mobile data
+        
+        // Option 2: If you want to preserve WiFi-only requirement, uncomment below:
+        // val conditions = DownloadConditions.Builder()
+        //     .requireWifi()
+        //     .build()
+        
+        var turkishToEnglishReady = false
+        var englishToTurkishReady = false
+        var hasErrors = false
         
         fun checkCompletion() {
-            synchronized(this) {
-                if (continuationResumed) return
-                
-                if (turkishToEnglishDownloaded && englishToTurkishDownloaded) {
-                    // Both models downloaded successfully
-                    isInitialized = true
-                    Log.i(TAG, "All translation models downloaded successfully")
-                    onModelDownloaded?.invoke()
-                    continuationResumed = true
-                    continuation.resume(true)
-                } else if (turkishToEnglishFailed && englishToTurkishFailed) {
-                    // Both models failed to download
-                    Log.w(TAG, "Both translation models failed to download - continuing without translation")
-                    continuationResumed = true
-                    continuation.resume(false)
-                } else if ((turkishToEnglishDownloaded || turkishToEnglishFailed) && 
-                          (englishToTurkishDownloaded || englishToTurkishFailed)) {
-                    // At least one model downloaded, we can proceed with partial functionality
-                    if (turkishToEnglishDownloaded || englishToTurkishDownloaded) {
-                        isInitialized = true
-                        Log.i(TAG, "At least one translation model available")
-                        onModelDownloaded?.invoke()
-                        continuationResumed = true
-                        continuation.resume(true)
-                    }
-                }
+            if (turkishToEnglishReady && englishToTurkishReady) {
+                isInitialized = true
+                Log.i(TAG, "All translation models downloaded successfully")
+                onModelDownloaded?.invoke()
+            } else if (hasErrors) {
+                Log.w(TAG, "Translation models unavailable - continuing without translation")
+                // App continues to work, just without translation feature
             }
         }
         
         // Download Turkish to English model
+        Log.i(TAG, "Attempting to download Turkish to English model...")
         turkishToEnglishTranslator?.downloadModelIfNeeded(conditions)
             ?.addOnSuccessListener {
-                Log.i(TAG, "Turkish to English model downloaded")
-                turkishToEnglishDownloaded = true
+                turkishToEnglishReady = true
+                Log.i(TAG, "✅ Turkish to English model ready")
                 checkCompletion()
             }
             ?.addOnFailureListener { exception ->
-                Log.e(TAG, "Failed to download Turkish to English model: ${exception.message}")
-                onError?.invoke("Failed to download Turkish translation model")
-                turkishToEnglishFailed = true
+                hasErrors = true
+                Log.w(TAG, "❌ Turkish to English model failed: ${exception.javaClass.simpleName}")
+                Log.w(TAG, "Full error: ${exception.message}")
+                Log.w(TAG, "Possible causes:")
+                Log.w(TAG, "  - Emulator limitations (most common)")
+                Log.w(TAG, "  - Regional restrictions")
+                Log.w(TAG, "  - Google Play Services compatibility")
+                Log.w(TAG, "  - Model temporarily unavailable")
                 checkCompletion()
             }
         
         // Download English to Turkish model
+        Log.i(TAG, "Attempting to download English to Turkish model...")
         englishToTurkishTranslator?.downloadModelIfNeeded(conditions)
             ?.addOnSuccessListener {
-                Log.i(TAG, "English to Turkish model downloaded")
-                englishToTurkishDownloaded = true
+                englishToTurkishReady = true
+                Log.i(TAG, "✅ English to Turkish model ready")
                 checkCompletion()
             }
             ?.addOnFailureListener { exception ->
-                Log.e(TAG, "Failed to download English to Turkish model: ${exception.message}")
-                onError?.invoke("Failed to download English translation model")
-                englishToTurkishFailed = true
+                hasErrors = true
+                Log.w(TAG, "❌ English to Turkish model failed: ${exception.javaClass.simpleName}")
+                Log.w(TAG, "Full error: ${exception.message}")
+                Log.w(TAG, "Note: App continues to work perfectly without translation")
                 checkCompletion()
             }
+    }
+    
+    private fun logDeviceStatus() {
+        try {
+            // Check available storage
+            val internalDir = context.filesDir
+            val freeSpace = internalDir.freeSpace / (1024 * 1024) // MB
+            val totalSpace = internalDir.totalSpace / (1024 * 1024) // MB
+            Log.i(TAG, "Storage: ${freeSpace}MB free / ${totalSpace}MB total")
+            
+            // Check network connectivity
+            val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+            val activeNetwork = connectivityManager.activeNetworkInfo
+            val networkInfo = if (activeNetwork?.isConnected == true) {
+                "Connected via ${activeNetwork.typeName} (${activeNetwork.subtypeName})"
+            } else {
+                "No active network connection"
+            }
+            Log.i(TAG, "Network: $networkInfo")
+            
+            // Check Google Play Services availability
+            try {
+                val googleApiAvailability = com.google.android.gms.common.GoogleApiAvailability.getInstance()
+                val resultCode = googleApiAvailability.isGooglePlayServicesAvailable(context)
+                val playServicesStatus = when (resultCode) {
+                    com.google.android.gms.common.ConnectionResult.SUCCESS -> "Available ✅"
+                    com.google.android.gms.common.ConnectionResult.SERVICE_MISSING -> "Missing ❌"
+                    com.google.android.gms.common.ConnectionResult.SERVICE_VERSION_UPDATE_REQUIRED -> "Needs Update ⚠️"
+                    com.google.android.gms.common.ConnectionResult.SERVICE_DISABLED -> "Disabled ❌"
+                    else -> "Unavailable (Code: $resultCode) ❌"
+                }
+                Log.i(TAG, "Google Play Services: $playServicesStatus")
+                
+                if (resultCode != com.google.android.gms.common.ConnectionResult.SUCCESS) {
+                    Log.w(TAG, "ML Kit translation requires Google Play Services")
+                    Log.w(TAG, "This is common on emulators without full Google services")
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Could not check Google Play Services: ${e.message}")
+            }
+            
+            if (freeSpace < 100) {
+                Log.w(TAG, "Low storage warning: Translation models need ~60MB total")
+            }
+            
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not check device status: ${e.message}")
+        }
     }
     
     /**

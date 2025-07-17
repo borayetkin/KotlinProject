@@ -1,8 +1,6 @@
 package com.example.myapplication
 
 import android.os.Bundle
-import android.view.Menu
-import android.view.MenuItem
 import androidx.activity.OnBackPressedCallback
 import androidx.appcompat.app.ActionBarDrawerToggle
 import androidx.appcompat.app.AppCompatActivity
@@ -35,9 +33,9 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
 
         if (savedInstanceState == null) {
             supportFragmentManager.beginTransaction()
-                .replace(R.id.nav_host_fragment_content_main, HomeFragment())
+                .replace(R.id.nav_host_fragment_content_main, VoiceFragment())
                 .commit()
-            navigationView.setCheckedItem(R.id.nav_home)
+            navigationView.setCheckedItem(R.id.nav_voice)
         }
 
         // Handle back button press for drawer
@@ -47,36 +45,18 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
                     drawerLayout.closeDrawer(GravityCompat.START)
                 } else {
                     finish()
+                }
             }
-        }
         })
     }
 
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        menuInflater.inflate(R.menu.main, menu)
-        return true
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        return when (item.itemId) {
-            R.id.action_settings -> true
-            else -> super.onOptionsItemSelected(item)
-        }
-    }
-
-    override fun onNavigationItemSelected(item: MenuItem): Boolean {
+    override fun onNavigationItemSelected(item: android.view.MenuItem): Boolean {
         when (item.itemId) {
-            R.id.nav_home -> {
-                replaceFragment(HomeFragment())
+            R.id.nav_voice -> {
+                replaceFragment(VoiceFragment())
             }
             R.id.nav_files -> {
                 replaceFragment(FileListFragment())
-}
-            R.id.nav_gallery -> {
-                replaceFragment(GalleryFragment())
-            }
-            R.id.nav_voice -> {
-                replaceFragment(VoiceFragment())
             }
         }
         drawerLayout.closeDrawer(GravityCompat.START)
