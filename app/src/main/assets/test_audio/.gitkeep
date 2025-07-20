@@ -1,0 +1,8 @@
+# This file ensures the test_audio directory is tracked by git
+# 
+# Add your test audio files here:
+# - test_audio_1.wav
+# - test_audio_2.wav  
+# - test_audio_3.wav
+#
+# See README.md for detailed instructions 

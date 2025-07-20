@@ -231,6 +231,13 @@ class VoiceFragment : Fragment() {
     }
 
     private suspend fun monitorVoiceActivity(bufferSize: Int) {
+        // 🎬 TEST MODE: Use pre-recorded audio for emulator testing
+        if (TestAudioProvider.ENABLE_TEST_MODE) {
+            simulateTestRecording()
+            return
+        }
+        
+        // Normal VAD monitoring for real microphone
         val buffer = ShortArray(bufferSize)
         var consecutiveSilenceCount = 0
         val silenceThreshold = (SILENCE_TIMEOUT_MS / 50).toInt()
@@ -270,11 +277,11 @@ class VoiceFragment : Fragment() {
                             synchronized(recordedData) { recordedData.addAll(buffer.take(readResult)) }
                             
                             if (consecutiveSilenceCount >= silenceThreshold) {
-                                val duration = System.currentTimeMillis() - recordingStartTime
-                                Log.i(TAG, "SPEECH ENDED - Duration: ${duration}ms")
+                                val actualDuration = System.currentTimeMillis() - recordingStartTime
+                                Log.i(TAG, "SPEECH ENDED - Duration: ${actualDuration}ms")
                                 
                                 withContext(Dispatchers.Main) {
-                                    if (duration >= MIN_RECORDING_DURATION_MS) {
+                                    if (actualDuration >= MIN_RECORDING_DURATION_MS) {
                                         stopRecordingAndContinueListening()
                                     } else {
                                         Log.w(TAG, "Speech too short, discarding...")
@@ -289,6 +296,96 @@ class VoiceFragment : Fragment() {
             } catch (e: Exception) {
                 if (e !is CancellationException) {
                     Log.e(TAG, "VAD monitoring error: ${e.message}")
+                }
+                break
+            }
+        }
+    }
+    
+    /**
+     * 🎬 Test mode simulation - uses pre-recorded audio files
+     */
+    private suspend fun simulateTestRecording() {
+        Log.i(TAG, "🎬 TEST MODE ACTIVE - Using pre-recorded audio")
+        
+        // Check available test files
+        val availableFiles = TestAudioProvider.checkTestFilesAvailable(requireContext())
+        if (availableFiles.isEmpty()) {
+            Log.w(TAG, "No test audio files found!")
+            withContext(Dispatchers.Main) {
+                currentState = RecordingState.IDLE
+                tvStatus.text = "❌ Test mode enabled but no audio files found\n\n${TestAudioProvider.getSetupInstructions()}"
+                renderState()
+            }
+            return
+        }
+        
+        Log.i(TAG, "Found test files: $availableFiles")
+        withContext(Dispatchers.Main) {
+            tvStatus.text = "🎬 Test mode active - Found ${availableFiles.size} test files\nTap to simulate recording"
+        }
+        
+        // Wait for simulated "speech detection"
+        var simulationDelay = 3000L // Wait 3 seconds, then simulate speech
+        
+        while (isListening) {
+            try {
+                // Simulate audio level animation
+                withContext(Dispatchers.Main) {
+                    currentAudioLevel = 0.1 // Low background level
+                    renderState()
+                }
+                
+                if (simulationDelay <= 0 && !isRecording) {
+                    // Simulate speech detection
+                    Log.i(TAG, "🎬 SIMULATED SPEECH DETECTED!")
+                    withContext(Dispatchers.Main) { 
+                        currentAudioLevel = 0.5 // High audio level during "speech"
+                        startRecording() 
+                    }
+                    
+                    // Load test recording
+                    val testResult = TestAudioProvider.simulateRecording(requireContext())
+                    if (testResult != null) {
+                        // Simulate the recording process
+                        synchronized(recordedData) {
+                            recordedData.clear()
+                            recordedData.addAll(testResult.audioData)
+                        }
+                        
+                        // Process with STT if available
+                        if (voskSTT.isReady()) {
+                            // Convert List<Short> to ShortArray for Vosk
+                            val audioArray = testResult.audioData.toShortArray()
+                            voskSTT.processAudio(audioArray, audioArray.size)
+                        }
+                        
+                        // Wait for the "recording" duration
+                        delay(testResult.durationMs)
+                        
+                        // Simulate speech end
+                        Log.i(TAG, "🎬 SIMULATED SPEECH ENDED - Using file: ${testResult.fileName}")
+                        withContext(Dispatchers.Main) {
+                            stopRecordingAndContinueListening()
+                        }
+                        
+                        // Reset for next simulation
+                        simulationDelay = 8000L // Wait 8 seconds before next simulation
+                    } else {
+                        Log.e(TAG, "Failed to load test audio")
+                        withContext(Dispatchers.Main) {
+                            discardRecordingAndContinueListening()
+                        }
+                        simulationDelay = 5000L
+                    }
+                }
+                
+                simulationDelay -= 100
+                delay(100)
+                
+            } catch (e: Exception) {
+                if (e !is CancellationException) {
+                    Log.e(TAG, "Test simulation error: ${e.message}")
                 }
                 break
             }
@@ -329,14 +426,14 @@ class VoiceFragment : Fragment() {
             currentState = RecordingState.STT_PROCESSING
             renderState()
             
-            // Finalize Vosk recognition for this recording segment
-            val transcription = if (voskSTT.isReady()) {
-                voskSTT.finalizeRecognition() ?: ""
-            } else {
-                Log.w(TAG, "Vosk STT not ready, using empty transcription")
-                ""
+            // Use the transcription we already got during real-time processing
+            // If we don't have it yet, try to finalize
+            var transcription = currentTranscription
+            if (transcription.isEmpty() && voskSTT.isReady()) {
+                transcription = voskSTT.finalizeRecognition() ?: ""
             }
             
+            // Use the best transcription we have
             currentTranscription = transcription
             Log.i(TAG, "Offline STT Result: \"$currentTranscription\"")
             
@@ -457,14 +554,14 @@ class VoiceFragment : Fragment() {
                     currentState = RecordingState.STT_PROCESSING
                     renderState()
                     
-                    // Finalize Vosk recognition for this recording segment
-                    val transcription = if (voskSTT.isReady()) {
-                        voskSTT.finalizeRecognition() ?: ""
-                    } else {
-                        Log.w(TAG, "Vosk STT not ready, using empty transcription")
-                        ""
+                    // Use the transcription we already got during real-time processing
+                    // If we don't have it yet, try to finalize
+                    var transcription = currentTranscription
+                    if (transcription.isEmpty() && voskSTT.isReady()) {
+                        transcription = voskSTT.finalizeRecognition() ?: ""
                     }
                     
+                    // Use the best transcription we have
                     currentTranscription = transcription
                     Log.i(TAG, "Manual stop - Offline STT Result: \"$currentTranscription\"")
                     
