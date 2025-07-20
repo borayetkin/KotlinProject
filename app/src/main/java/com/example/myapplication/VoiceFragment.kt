@@ -318,8 +318,8 @@ class VoiceFragment : Fragment() {
     private suspend fun stopRecordingAndContinueListening() {
         if (!isRecording) return
         
-        val duration = System.currentTimeMillis() - recordingStartTime
-        Log.i(TAG, "SPEECH SEGMENT ENDED - Duration: ${duration}ms")
+        val actualDuration = System.currentTimeMillis() - recordingStartTime
+        Log.i(TAG, "SPEECH SEGMENT ENDED - Duration: ${actualDuration}ms")
         
         val audioData = synchronized(recordedData) { recordedData.toList() }
         Log.i(TAG, "Processing ${audioData.size} audio samples...")
@@ -352,7 +352,7 @@ class VoiceFragment : Fragment() {
                 }
             }
             
-            createAudioAndTranscriptFiles(audioData, currentTranscription, currentTranslation, continueListening = true)
+            createAudioAndTranscriptFiles(audioData, currentTranscription, currentTranslation, actualDuration, continueListening = true)
         } else {
             currentState = RecordingState.LISTENING
             renderState()
@@ -369,7 +369,7 @@ class VoiceFragment : Fragment() {
         renderState()
     }
 
-    private suspend fun createAudioAndTranscriptFiles(audioData: List<Short>, transcription: String, translation: String = "", continueListening: Boolean = true) {
+    private suspend fun createAudioAndTranscriptFiles(audioData: List<Short>, transcription: String, translation: String = "", actualDurationMs: Long, continueListening: Boolean = true) {
         try {
             val timestamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
             val audioFile = File(audioDir, "voice_${timestamp}.wav")
@@ -378,7 +378,7 @@ class VoiceFragment : Fragment() {
             Log.i(TAG, "Creating files: ${audioFile.name}, ${textFile.name}")
             
             audioFile.writeWav(audioData, SAMPLE_RATE)
-            val finalTranscription = textFile.writeTranscriptWithTranslation(audioData, timestamp, SAMPLE_RATE, transcription, translation)
+            val finalTranscription = textFile.writeTranscriptWithTranslation(audioData, timestamp, SAMPLE_RATE, transcription, translation, actualDurationMs)
             
             currentState = RecordingState.SENDING
             renderState()
@@ -480,7 +480,7 @@ class VoiceFragment : Fragment() {
                         }
                     }
                     
-                    createAudioAndTranscriptFiles(audioData, currentTranscription, currentTranslation, continueListening = false)
+                    createAudioAndTranscriptFiles(audioData, currentTranscription, currentTranslation, duration, continueListening = false)
                     
                     // Note: completeStopListening() will be called automatically after API send completes
                 } else {

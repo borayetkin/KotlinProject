@@ -12,23 +12,25 @@ object WavUtils {
             val dataSize = audioData.size * 2
             val fileSize = dataSize + 36
             
-            // WAV header
+            // WAV header with proper byte order (little-endian)
             fos.write("RIFF".toByteArray())
-            fos.write(fileSize.toByteArray())
+            fos.write(fileSize.toLittleEndianByteArray())
             fos.write("WAVE".toByteArray())
             fos.write("fmt ".toByteArray())
-            fos.write(16.toByteArray()) // PCM header size
-            fos.write(1.toShortArray()) // PCM format
-            fos.write(1.toShortArray()) // Mono
-            fos.write(sampleRate.toByteArray()) // Sample rate
-            fos.write((sampleRate * 2).toByteArray()) // Byte rate
-            fos.write(2.toShortArray()) // Block align
-            fos.write(16.toShortArray()) // Bits per sample
+            fos.write(16.toLittleEndianByteArray()) // PCM header size
+            fos.write(1.toLittleEndianShortArray()) // PCM format
+            fos.write(1.toLittleEndianShortArray()) // Mono
+            fos.write(sampleRate.toLittleEndianByteArray()) // Sample rate
+            fos.write((sampleRate * 2).toLittleEndianByteArray()) // Byte rate
+            fos.write(2.toLittleEndianShortArray()) // Block align
+            fos.write(16.toLittleEndianShortArray()) // Bits per sample
             fos.write("data".toByteArray())
-            fos.write(dataSize.toByteArray())
+            fos.write(dataSize.toLittleEndianByteArray())
             
-            // Audio data
-            audioData.forEach { sample -> fos.write(sample.toByteArray()) }
+            // Audio data in little-endian format
+            audioData.forEach { sample -> 
+                fos.write(sample.toLittleEndianByteArray()) 
+            }
         }
     }
     
@@ -62,8 +64,20 @@ object WavUtils {
         return transcription
     }
     
-    fun File.writeTranscriptWithTranslation(audioData: List<Short>, timestamp: String, sampleRate: Int = 16000, realTranscription: String = "", translation: String = ""): String {
-        val duration = audioData.size / sampleRate.toFloat()
+    fun File.writeTranscriptWithTranslation(
+        audioData: List<Short>, 
+        timestamp: String, 
+        sampleRate: Int = 16000, 
+        realTranscription: String = "", 
+        translation: String = "",
+        actualDurationMs: Long? = null
+    ): String {
+        // Use actual recording duration if provided, otherwise calculate from samples
+        val duration = if (actualDurationMs != null) {
+            actualDurationMs / 1000.0f
+        } else {
+            audioData.size / sampleRate.toFloat()
+        }
         
         // Use real transcription if available, otherwise provide fallback
         val transcription = if (realTranscription.isNotBlank()) {
@@ -103,18 +117,23 @@ object WavUtils {
         return transcription
     }
     
-    // Helper extension functions for byte conversion
-    private fun Int.toByteArray() = byteArrayOf(
+    // Helper extension functions for proper little-endian byte conversion
+    private fun Int.toLittleEndianByteArray() = byteArrayOf(
         (this and 0xFF).toByte(),
         ((this shr 8) and 0xFF).toByte(),
         ((this shr 16) and 0xFF).toByte(),
         ((this shr 24) and 0xFF).toByte()
     )
     
-    private fun Short.toByteArray() = byteArrayOf(
+    private fun Short.toLittleEndianByteArray() = byteArrayOf(
         (this.toInt() and 0xFF).toByte(),
         ((this.toInt() shr 8) and 0xFF).toByte()
     )
     
-    private fun Int.toShortArray() = this.toShort().toByteArray()
+    private fun Int.toLittleEndianShortArray() = this.toShort().toLittleEndianByteArray()
+    
+    // Legacy functions for backward compatibility
+    private fun Int.toByteArray() = toLittleEndianByteArray()
+    private fun Short.toByteArray() = toLittleEndianByteArray()
+    private fun Int.toShortArray() = toLittleEndianShortArray()
 } 
