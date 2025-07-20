@@ -45,8 +45,8 @@ class MainActivity : AppCompatActivity(), NavigationView.OnNavigationItemSelecte
                     drawerLayout.closeDrawer(GravityCompat.START)
                 } else {
                     finish()
-                }
             }
+        }
         })
     }
 
