@@ -13,12 +13,16 @@
     <string name="menu_voice">Voice Recorder</string>
     
     <!-- Voice Fragment -->
-    <string name="voice_title">Voice Recorder</string>
-    <string name="voice_subtitle">Tap to start recording</string>
+    <string name="voice_title">Multi-Language Voice Recorder</string>
+    <string name="voice_subtitle">Select language and tap to start recording</string>
     <string name="mic_button_start">Start Listening</string>
     <string name="status_idle">Ready to listen</string>
     <string name="status_listening">Listening for speech...</string>
     <string name="status_recording">Recording speech...</string>
     <string name="status_processing">Processing audio...</string>
     <string name="status_sending">Sending to API...</string>
+    
+    <!-- Language Selection -->
+    <string name="language_label">Language</string>
+    <string name="detected_language">Detected: %s</string>
 </resources>

@@ -26,7 +26,7 @@ object TestAudioProvider {
     private const val TAG = "TestAudioProvider"
     
     // 🎯 ENABLE/DISABLE TEST MODE HERE
-    const val ENABLE_TEST_MODE = false  // Set to true for emulator testing
+    const val ENABLE_TEST_MODE = true  // Set to true for emulator testing
     
     private const val TEST_AUDIO_DIR = "test_audio"
     private val testFiles = listOf(

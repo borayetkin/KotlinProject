@@ -17,7 +17,8 @@ class VoskSTTManager(private val context: Context) {
     companion object {
         private const val TAG = "VoskSTT"
         private const val SAMPLE_RATE = 16000.0f
-        private const val MODEL_NAME = "vosk-model-small-tr-0.3" // Turkish model
+        private const val MODEL_NAME = "vosk-model-small-tr-0.3" // Turkish model (backward compatibility)
+        private const val LANGUAGE_DETECTION_BUFFER_SIZE = 8000 // ~0.5 seconds at 16kHz
     }
     
     private var model: Model? = null
@@ -25,8 +26,16 @@ class VoskSTTManager(private val context: Context) {
     private var isInitialized = AtomicBoolean(false)
     private var isProcessing = AtomicBoolean(false)
     
+    // Multi-language support
+    private val models = mutableMapOf<Language, Model>()
+    private val recognizers = mutableMapOf<Language, Recognizer>()
+    private var currentLanguage: Language = Language.TURKISH
+    private var isAutoDetectMode = false
+    private val detectionBuffers = mutableMapOf<Language, MutableList<Short>>()
+    
     // Callbacks
     private var onTranscriptionResult: ((String) -> Unit)? = null
+    private var onLanguageDetected: ((Language) -> Unit)? = null
     private var onError: ((String) -> Unit)? = null
     private var onInitialized: (() -> Unit)? = null
     
@@ -47,6 +56,10 @@ class VoskSTTManager(private val context: Context) {
     
     fun setOnTranscriptionResultListener(listener: (String) -> Unit) {
         onTranscriptionResult = listener
+    }
+    
+    fun setOnLanguageDetectedListener(listener: (Language) -> Unit) {
+        onLanguageDetected = listener
     }
     
     fun setOnErrorListener(listener: (String) -> Unit) {
@@ -104,6 +117,41 @@ class VoskSTTManager(private val context: Context) {
     }
     
     /**
+     * Set current language for STT
+     */
+    fun setLanguage(language: Language) {
+        if (language.hasSTTSupport()) {
+            currentLanguage = language
+            isAutoDetectMode = false
+            Log.i(TAG, "Language set to: ${language.displayName}")
+            
+            // Reset recognizer to ensure clean state for new language
+            recognizer?.reset()
+            Log.d(TAG, "Recognizer reset for language change")
+        }
+    }
+    
+    /**
+     * Enable auto-detection mode
+     */
+    fun enableAutoDetection() {
+        isAutoDetectMode = true
+        detectionBuffers.clear()
+        // Initialize detection buffers for available languages
+        Language.getLanguagesWithSTT().forEach { language ->
+            detectionBuffers[language] = mutableListOf()
+        }
+        Log.i(TAG, "Auto-detection mode enabled")
+    }
+    
+    /**
+     * Check if language model is available
+     */
+    fun isLanguageAvailable(language: Language): Boolean {
+        return language == Language.TURKISH || models.containsKey(language)
+    }
+    
+    /**
      * Process audio data for speech recognition
      */
     fun processAudio(audioData: ShortArray, length: Int): String? {
@@ -120,24 +168,13 @@ class VoskSTTManager(private val context: Context) {
         return try {
             isProcessing.set(true)
             
-            // Convert shorts to bytes for Vosk
-            val audioBytes = ByteArray(length * 2)
-            for (i in 0 until length) {
-                val value = audioData[i].toInt()
-                audioBytes[i * 2] = (value and 0xFF).toByte()
-                audioBytes[i * 2 + 1] = ((value shr 8) and 0xFF).toByte()
-            }
-            
-            val result = recognizer?.acceptWaveForm(audioBytes, audioBytes.size)
-            
-            if (result == true) {
-                // Final result
-                val resultJson = recognizer?.finalResult
-                parseTranscriptionResult(resultJson)
+            if (isAutoDetectMode) {
+                Log.d(TAG, "Processing audio in auto-detection mode")
+                processAudioForDetection(audioData, length)
+                null // No immediate result in detection mode
             } else {
-                // Partial result
-                val partialJson = recognizer?.partialResult
-                parsePartialResult(partialJson)
+                Log.d(TAG, "Processing audio for language: ${currentLanguage.displayName}")
+                processAudioForLanguage(currentLanguage, audioData, length)
             }
             
         } catch (e: Exception) {
@@ -149,17 +186,96 @@ class VoskSTTManager(private val context: Context) {
     }
     
     /**
+     * Process audio for language detection
+     */
+    private fun processAudioForDetection(audioData: ShortArray, length: Int) {
+        // Add audio to detection buffers for Turkish (main available language)
+        val buffer = detectionBuffers[Language.TURKISH] ?: return
+        buffer.addAll(audioData.take(length))
+        
+        // Also process audio for transcription in parallel during detection
+        val turkishResult = processAudioForLanguage(Language.TURKISH, audioData, length)
+        
+        // If buffer is large enough, try detection
+        if (buffer.size >= LANGUAGE_DETECTION_BUFFER_SIZE) {
+            val detected = detectLanguageFromBuffer(Language.TURKISH, buffer)
+            if (detected) {
+                // Switch to detected language
+                currentLanguage = Language.TURKISH
+                isAutoDetectMode = false
+                onLanguageDetected?.invoke(Language.TURKISH)
+                Log.i(TAG, "Language detected: Turkish - switching to transcription mode")
+                
+                // If we got a transcription result during detection, use it
+                if (!turkishResult.isNullOrEmpty()) {
+                    onTranscriptionResult?.invoke(turkishResult)
+                }
+            }
+            buffer.clear()
+        }
+    }
+    
+    /**
+     * Process audio for specific language
+     */
+    private fun processAudioForLanguage(language: Language, audioData: ShortArray, length: Int): String? {
+        // Convert shorts to bytes for Vosk
+        val audioBytes = ByteArray(length * 2)
+        for (i in 0 until length) {
+            val value = audioData[i].toInt()
+            audioBytes[i * 2] = (value and 0xFF).toByte()
+            audioBytes[i * 2 + 1] = ((value shr 8) and 0xFF).toByte()
+        }
+        
+        val result = recognizer?.acceptWaveForm(audioBytes, audioBytes.size)
+        
+        return if (result == true) {
+            // Final result
+            val resultJson = recognizer?.finalResult
+            parseTranscriptionResult(resultJson)
+        } else {
+            // Partial result
+            val partialJson = recognizer?.partialResult
+            parsePartialResult(partialJson)
+        }
+    }
+    
+    /**
+     * Detect language from audio buffer
+     */
+    private fun detectLanguageFromBuffer(language: Language, buffer: List<Short>): Boolean {
+        // For now, simple detection - if Turkish model produces results, assume Turkish
+        val audioBytes = ByteArray(buffer.size * 2)
+        for (i in buffer.indices) {
+            val value = buffer[i].toInt()
+            audioBytes[i * 2] = (value and 0xFF).toByte()
+            audioBytes[i * 2 + 1] = ((value shr 8) and 0xFF).toByte()
+        }
+        
+        val result = recognizer?.acceptWaveForm(audioBytes, audioBytes.size)
+        return result == true && !recognizer?.finalResult.isNullOrEmpty()
+    }
+    
+    /**
      * Finalize current recognition session and get final result
      */
     fun finalizeRecognition(): String? {
-        if (!isInitialized.get()) return null
+        if (!isInitialized.get()) {
+            Log.w(TAG, "Cannot finalize: STT not initialized")
+            return null
+        }
         
         return try {
+            Log.i(TAG, "Finalizing recognition...")
             val finalJson = recognizer?.finalResult
+            Log.i(TAG, "Final JSON from recognizer: \"$finalJson\"")
+            
             val result = parseTranscriptionResult(finalJson)
+            Log.i(TAG, "Parsed final result: \"$result\"")
             
             // Reset recognizer for next session
             recognizer?.reset()
+            Log.d(TAG, "Recognizer reset")
             
             result
         } catch (e: Exception) {

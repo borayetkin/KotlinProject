@@ -12,6 +12,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.ProgressBar
 import android.widget.TextView
+import android.widget.Spinner
+import android.widget.ArrayAdapter
+import android.widget.AdapterView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
@@ -44,6 +47,8 @@ class VoiceFragment : Fragment() {
     private lateinit var tvStatus: TextView
     private lateinit var tvAudioLevel: TextView
     private lateinit var progressAudioLevel: ProgressBar
+    private lateinit var spinnerLanguage: Spinner
+    private lateinit var tvDetectedLanguage: TextView
 
     // Audio Recording
     private var audioRecord: AudioRecord? = null
@@ -58,6 +63,11 @@ class VoiceFragment : Fragment() {
     private lateinit var translator: OfflineTranslationManager
     private var currentTranscription: String = ""
     private var currentTranslation: String = ""
+    
+    // Multi-language support
+    private var selectedLanguage: Language = Language.getDefault()
+    private var detectedLanguage: Language? = null
+    private lateinit var languageAdapter: ArrayAdapter<Language>
 
     enum class RecordingState {
         IDLE, LISTENING, RECORDING, STT_PROCESSING, PROCESSING, SENDING
@@ -94,6 +104,47 @@ class VoiceFragment : Fragment() {
         tvStatus = view.findViewById(R.id.tvStatus)
         tvAudioLevel = view.findViewById(R.id.tvAudioLevel)
         progressAudioLevel = view.findViewById(R.id.progressAudioLevel)
+        spinnerLanguage = view.findViewById(R.id.spinnerLanguage)
+        tvDetectedLanguage = view.findViewById(R.id.tvDetectedLanguage)
+        
+        setupLanguageSelector()
+    }
+
+    private fun setupLanguageSelector() {
+        // Setup language adapter
+        languageAdapter = ArrayAdapter(
+            requireContext(),
+            android.R.layout.simple_spinner_item,
+            Language.values().toList()
+        )
+        languageAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spinnerLanguage.adapter = languageAdapter
+        
+        // Set default selection
+        spinnerLanguage.setSelection(0) // AUTO_DETECT is first
+        
+        // Handle language selection
+        spinnerLanguage.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                selectedLanguage = Language.values()[position]
+                onLanguageSelected(selectedLanguage)
+            }
+            
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+    }
+    
+    private fun onLanguageSelected(language: Language) {
+        Log.i(TAG, "Language selected: ${language.displayName}")
+        
+        if (language.isAutoDetect) {
+            voskSTT.enableAutoDetection()
+            tvDetectedLanguage.visibility = View.GONE
+        } else {
+            voskSTT.setLanguage(language)
+            tvDetectedLanguage.visibility = View.GONE
+            detectedLanguage = null
+        }
     }
 
     private fun setupAudioDirectory() {
@@ -110,8 +161,10 @@ class VoiceFragment : Fragment() {
             voskSTT = VoskSTTManager(requireContext())
             
             voskSTT.setOnTranscriptionResultListener { transcription ->
-                currentTranscription = transcription
-                Log.i(TAG, "Offline STT Result received: \"$transcription\"")
+                lifecycleScope.launch(Dispatchers.Main) {
+                    currentTranscription = transcription
+                    Log.i(TAG, "Offline STT Result received: \"$transcription\"")
+                }
             }
         } catch (e: UnsatisfiedLinkError) {
             Log.e(TAG, "Failed to initialize Vosk STT due to native library issue: ${e.message}")
@@ -134,12 +187,23 @@ class VoiceFragment : Fragment() {
             Log.i(TAG, "Vosk STT initialized and ready")
         }
         
+        voskSTT.setOnLanguageDetectedListener { language ->
+            lifecycleScope.launch(Dispatchers.Main) {
+                detectedLanguage = language
+                tvDetectedLanguage.text = getString(R.string.detected_language, language.displayName)
+                tvDetectedLanguage.visibility = View.VISIBLE
+                Log.i(TAG, "Language detected: ${language.displayName}")
+            }
+        }
+        
         // Initialize Translation Manager
         translator = OfflineTranslationManager(requireContext())
         
         translator.setOnTranslationResultListener { original, translated ->
-            currentTranslation = translated
-            Log.i(TAG, "Translation result: \"$original\" -> \"$translated\"")
+            lifecycleScope.launch(Dispatchers.Main) {
+                currentTranslation = translated
+                Log.i(TAG, "Translation result: \"$original\" -> \"$translated\"")
+            }
         }
         
         translator.setOnErrorListener { error ->
@@ -441,9 +505,10 @@ class VoiceFragment : Fragment() {
             currentTranslation = ""
             if (currentTranscription.isNotEmpty() && translator.isReady()) {
                 try {
-                    val translationResult = translator.autoTranslate(currentTranscription)
+                    val effectiveLanguage = detectedLanguage ?: selectedLanguage.takeIf { !it.isAutoDetect } ?: Language.TURKISH
+                    val translationResult = translator.autoTranslateWithLanguage(currentTranscription, effectiveLanguage)
                     currentTranslation = translationResult?.second ?: ""
-                    Log.i(TAG, "Translation: \"$currentTranscription\" -> \"$currentTranslation\"")
+                    Log.i(TAG, "Translation (${effectiveLanguage.displayName}): \"$currentTranscription\" -> \"$currentTranslation\"")
                 } catch (e: Exception) {
                     Log.w(TAG, "Translation failed: ${e.message}")
                 }
@@ -569,9 +634,10 @@ class VoiceFragment : Fragment() {
                     currentTranslation = ""
                     if (currentTranscription.isNotEmpty() && translator.isReady()) {
                         try {
-                            val translationResult = translator.autoTranslate(currentTranscription)
+                            val effectiveLanguage = detectedLanguage ?: selectedLanguage.takeIf { !it.isAutoDetect } ?: Language.TURKISH
+                            val translationResult = translator.autoTranslateWithLanguage(currentTranscription, effectiveLanguage)
                             currentTranslation = translationResult?.second ?: ""
-                            Log.i(TAG, "Manual stop - Translation: \"$currentTranscription\" -> \"$currentTranslation\"")
+                            Log.i(TAG, "Manual stop - Translation (${effectiveLanguage.displayName}): \"$currentTranscription\" -> \"$currentTranslation\"")
                         } catch (e: Exception) {
                             Log.w(TAG, "Manual stop - Translation failed: ${e.message}")
                         }

@@ -20,6 +20,9 @@ class OfflineTranslationManager(private val context: Context) {
     private var turkishToEnglishTranslator: Translator? = null
     private var isInitialized = false
     
+    // Multi-language support
+    private val translators = mutableMapOf<Language, Translator>()
+    
     // Callbacks
     private var onTranslationResult: ((String, String) -> Unit)? = null // (original, translated)
     private var onError: ((String) -> Unit)? = null
@@ -44,7 +47,7 @@ class OfflineTranslationManager(private val context: Context) {
     
     private fun setupTranslator() {
         try {
-            // Create Turkish to English translator (only direction needed)
+            // Create Turkish to English translator (backward compatibility)
             val turkishToEnglishOptions = TranslatorOptions.Builder()
                 .setSourceLanguage(TranslateLanguage.TURKISH)
                 .setTargetLanguage(TranslateLanguage.ENGLISH)
@@ -54,12 +57,38 @@ class OfflineTranslationManager(private val context: Context) {
             
             Log.i(TAG, "Turkish → English translator created")
             
+            // Setup multi-language translators
+            setupMultiLanguageTranslators()
+            
             // Download model
             downloadModel()
             
         } catch (e: Exception) {
             Log.e(TAG, "Failed to setup translator: ${e.message}")
             onError?.invoke("Translation setup failed")
+        }
+    }
+    
+    /**
+     * Setup translators for all supported languages
+     */
+    private fun setupMultiLanguageTranslators() {
+        Language.getLanguagesWithSTT().forEach { language ->
+            if (language.hasTranslationSupport()) {
+                try {
+                    val options = TranslatorOptions.Builder()
+                        .setSourceLanguage(language.mlKitCode)
+                        .setTargetLanguage(TranslateLanguage.ENGLISH)
+                        .build()
+                    
+                    val translator = Translation.getClient(options)
+                    translators[language] = translator
+                    
+                    Log.i(TAG, "${language.displayName} → English translator created")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to create translator for ${language.displayName}: ${e.message}")
+                }
+            }
         }
     }
     
@@ -176,6 +205,43 @@ class OfflineTranslationManager(private val context: Context) {
     }
     
     /**
+     * Translate text from any supported language to English
+     */
+    suspend fun translateToEnglish(text: String, fromLanguage: Language): String? = suspendCoroutine { continuation ->
+        if (text.trim().isEmpty()) {
+            continuation.resume("")
+            return@suspendCoroutine
+        }
+        
+        // Use specific translator or fall back to Turkish
+        val translator = if (fromLanguage == Language.TURKISH) {
+            turkishToEnglishTranslator
+        } else {
+            translators[fromLanguage]
+        }
+        
+        if (translator == null) {
+            Log.w(TAG, "No translator available for ${fromLanguage.displayName}")
+            continuation.resume(null)
+            return@suspendCoroutine
+        }
+        
+        Log.i(TAG, "Translating ${fromLanguage.displayName} to English: \"$text\"")
+        
+        translator.translate(text)
+            ?.addOnSuccessListener { translatedText ->
+                Log.i(TAG, "Translation result: \"$translatedText\"")
+                onTranslationResult?.invoke(text, translatedText)
+                continuation.resume(translatedText)
+            }
+            ?.addOnFailureListener { exception ->
+                Log.e(TAG, "Translation failed: ${exception.message}")
+                onError?.invoke("Translation failed: ${exception.message}")
+                continuation.resume(null)
+            }
+    }
+    
+    /**
      * Translate Turkish speech to English (simplified since only Turkish STT is available)
      */
     suspend fun autoTranslate(text: String): Pair<String, String>? {
@@ -185,6 +251,18 @@ class OfflineTranslationManager(private val context: Context) {
         
         // Since we only have Turkish STT, all speech input is Turkish
         val translated = translateTurkishToEnglish(text)
+        return if (translated != null) Pair(text, translated) else null
+    }
+    
+    /**
+     * Auto-translate text with detected language
+     */
+    suspend fun autoTranslateWithLanguage(text: String, detectedLanguage: Language): Pair<String, String>? {
+        if (text.trim().isEmpty()) {
+            return Pair("", "")
+        }
+        
+        val translated = translateToEnglish(text, detectedLanguage)
         return if (translated != null) Pair(text, translated) else null
     }
     
